@@ -17,7 +17,7 @@ For more information about Perplexity features and functionality used by Perplex
 
 ## Perplexity text generation
 
-This component generates text using Perplexity's language models.
+This component generates text using models on the [Perplexity Agent API](https://docs.perplexity.ai/docs/agent-api/models), such as `perplexity/sonar`, `openai/gpt-5.5`, and `anthropic/claude-sonnet-4-6`.
 
 It can output either a **Model Response** ([`Message`](/data-types#message)) or a **Language Model** ([`LanguageModel`](/data-types#languagemodel)).
 
@@ -31,9 +31,6 @@ For more information, see [Language model components](/components-models).
 
 | Name | Type | Description |
 |------|------|-------------|
-| model_name | String | Input parameter. The name of the Perplexity model to use. Options include various Llama 3.1 models. |
-| max_tokens | Integer | Input parameter. The maximum number of tokens to generate. |
+| model_name | String | Input parameter. The Agent API model to use. Choose from the list or enter any model ID from the Agent API model list. Default: `perplexity/sonar`. |
+| max_tokens | Integer | Input parameter. The maximum number of tokens to generate. Anthropic models require it. Default: `4096`. |
 | api_key | SecretString | Input parameter. The Perplexity API Key for authentication. |
-| temperature | Float | Input parameter. Controls randomness in the output. Default: 0.75. |
-| top_p | Float | Input parameter. The maximum cumulative probability of tokens to consider when sampling. |
-| n | Integer | Input parameter. Number of chat completions to generate for each prompt. |
