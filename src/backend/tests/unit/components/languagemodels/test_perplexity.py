@@ -8,7 +8,7 @@ pytest.importorskip("lfx_bundles")
 from lfx.components.perplexity.perplexity import PerplexityComponent
 from lfx.custom.custom_component.component import Component
 from lfx.custom.utils import build_custom_component_template
-from lfx.inputs.inputs import DropdownInput, FloatInput, IntInput, SecretStrInput, SliderInput
+from lfx.inputs.inputs import DropdownInput, IntInput, SecretStrInput
 
 from tests.base import ComponentTestBaseWithoutClient
 
@@ -30,8 +30,7 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
     def default_kwargs(self):
         return {
             "api_key": "dummy-key",  # pragma: allowlist secret
-            "model_name": "llama-3.1-sonar-small-128k-online",
-            "temperature": 0.75,
+            "model_name": "perplexity/sonar",
             "max_tokens": 50,
         }
 
@@ -49,7 +48,7 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
     def test_initialization(self, component_class):
         component = component_class()
         assert component.display_name == "Perplexity"
-        assert component.description == "Generate text using Perplexity LLMs."
+        assert component.description == "Generate text using models on the Perplexity Agent API."
         assert component.icon == "Perplexity"
         # The class name / identifier must remain stable: it keys saved flows.
         assert component.name == "PerplexityModel"
@@ -58,13 +57,10 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         inputs = {inp.name: inp for inp in PerplexityComponent().inputs}
         assert isinstance(inputs["model_name"], DropdownInput)
         assert isinstance(inputs["api_key"], SecretStrInput)
-        assert isinstance(inputs["temperature"], SliderInput)
         assert isinstance(inputs["max_tokens"], IntInput)
-        assert isinstance(inputs["top_p"], FloatInput)
-        assert isinstance(inputs["n"], IntInput)
         assert inputs["api_key"].required is True
-        assert inputs["model_name"].value == "llama-3.1-sonar-small-128k-online"
-        assert "llama-3.1-sonar-small-128k-online" in inputs["model_name"].options
+        assert inputs["model_name"].value == "perplexity/sonar"
+        assert inputs["model_name"].combobox is True
 
     def test_template(self, default_kwargs):
         component = PerplexityComponent(**default_kwargs)
@@ -72,7 +68,7 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         assert isinstance(frontend_node, dict)
         assert "template" in frontend_node
         input_names = [inp["name"] for inp in frontend_node["template"].values() if isinstance(inp, dict)]
-        for expected in ["model_name", "api_key", "temperature", "max_tokens", "top_p", "n"]:
+        for expected in ["model_name", "api_key", "max_tokens"]:
             assert expected in input_names
 
     def test_build_model(self, component_class, default_kwargs, mocker):
@@ -82,34 +78,23 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         # inputs mapped onto its kwargs.
         mock_chat = mocker.patch.object(_PERPLEXITY_MODULE, "ChatPerplexity", return_value=MagicMock())
         component = component_class(**default_kwargs)
-        component.top_p = 0.9
-        component.n = 2
 
         model = component.build_model()
 
         mock_chat.assert_called_once_with(
-            model="llama-3.1-sonar-small-128k-online",
-            temperature=0.75,
+            model="perplexity/sonar",
             pplx_api_key="dummy-key",
-            top_p=0.9,
-            n=2,
             max_tokens=50,
+            use_responses_api=True,
         )
         assert model is mock_chat.return_value
 
-    def test_build_model_applies_defaults(self, component_class, mocker):
-        # top_p falls back to None and n falls back to 1 when left unset; a falsy
-        # temperature falls back to 0.75.
+    def test_build_model_unset_max_tokens(self, component_class, mocker):
         mock_chat = mocker.patch.object(_PERPLEXITY_MODULE, "ChatPerplexity", return_value=MagicMock())
-        component = component_class(api_key="dummy-key", model_name="llama-3.1-8b-instruct", max_tokens=10)
-        component.temperature = 0
-        component.top_p = None
-        component.n = None
+        component = component_class(api_key="dummy-key", model_name="openai/gpt-5.5", max_tokens=0)
 
         component.build_model()
 
         _, kwargs = mock_chat.call_args
-        assert kwargs["top_p"] is None
-        assert kwargs["n"] == 1
-        assert kwargs["temperature"] == 0.75
-        assert kwargs["pplx_api_key"] == "dummy-key"
+        assert kwargs["max_tokens"] is None
+        assert kwargs["model"] == "openai/gpt-5.5"
