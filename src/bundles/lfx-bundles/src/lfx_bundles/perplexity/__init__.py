@@ -6,13 +6,16 @@ from lfx.utils.lazy_import import import_mod
 
 if TYPE_CHECKING:
     from .perplexity import PerplexityComponent
+    from .perplexity_embeddings import PerplexityEmbeddingsComponent
 
 _dynamic_imports = {
     "PerplexityComponent": "perplexity",
+    "PerplexityEmbeddingsComponent": "perplexity_embeddings",
 }
 
 __all__ = [
     "PerplexityComponent",
+    "PerplexityEmbeddingsComponent",
 ]
 
 

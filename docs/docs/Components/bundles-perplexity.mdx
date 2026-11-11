@@ -37,3 +37,19 @@ For more information, see [Language model components](/components-models).
 | temperature | Float | Input parameter. Controls randomness in the output. Default: 0.75. |
 | top_p | Float | Input parameter. The maximum cumulative probability of tokens to consider when sampling. |
 | n | Integer | Input parameter. Number of chat completions to generate for each prompt. |
+## Perplexity Embeddings
+
+The **Perplexity Embeddings** component generates embeddings using Perplexity embedding models.
+
+For more information about using embedding model components in flows, see [Embedding model components](/components-embedding-models).
+
+### Perplexity Embeddings parameters
+
+<PartialParams />
+
+| Name | Type | Description |
+|------|------|-------------|
+| model | String | Input parameter. The Perplexity embedding model to use. Options: `pplx-embed-v1-4b` and `pplx-embed-v1-0.6b`. Default: `pplx-embed-v1-4b`. |
+| api_key | SecretString | Input parameter. The Perplexity API Key for authentication. |
+| max_retries | Integer | Input parameter. The maximum number of retry attempts for failed requests. Default: 6. |
+| timeout | Integer | Input parameter. The request timeout in seconds. Default: 120. |
