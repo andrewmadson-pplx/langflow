@@ -1,15 +1,44 @@
+from typing import Any
+
 from langchain_perplexity import ChatPerplexity
 from lfx.base.models.model import LCModelComponent
 from lfx.field_typing import LanguageModel
 from lfx.field_typing.range_spec import RangeSpec
-from lfx.io import DropdownInput, FloatInput, IntInput, SecretStrInput, SliderInput
+from lfx.io import BoolInput, DropdownInput, FloatInput, IntInput, SecretStrInput, SliderInput
 from pydantic.v1 import SecretStr
+
+DEFAULT_MODEL = "perplexity/sonar"
+
+# Model IDs a saved flow can hold that the Agent API rejects, and the model each one runs on.
+# The seven llama-3.1 IDs are the options this component offered before it moved to the
+# Agent API. "sonar" is the Sonar Chat Completions name of perplexity/sonar. Any other ID
+# is sent unchanged.
+REPLACED_MODELS = {
+    "llama-3.1-sonar-small-128k-online": DEFAULT_MODEL,
+    "llama-3.1-sonar-large-128k-online": DEFAULT_MODEL,
+    "llama-3.1-sonar-huge-128k-online": DEFAULT_MODEL,
+    "llama-3.1-sonar-small-128k-chat": DEFAULT_MODEL,
+    "llama-3.1-sonar-large-128k-chat": DEFAULT_MODEL,
+    "llama-3.1-8b-instruct": DEFAULT_MODEL,
+    "llama-3.1-70b-instruct": DEFAULT_MODEL,
+    "sonar": DEFAULT_MODEL,
+}
+
+# Sent on every request so Perplexity can see which traffic comes from Langflow.
+ATTRIBUTION_HEADERS = {
+    "X-Pplx-Integration": "langflow",
+    "User-Agent": "langflow-perplexity-bundle",
+}
+
+# An Agent API request that names a model can search the web only when it carries this tool.
+# The retired "-online" models searched without it.
+WEB_SEARCH_TOOL = {"type": "web_search"}
 
 
 class PerplexityComponent(LCModelComponent):
     display_name = "Perplexity"
-    description = "Generate text using Perplexity LLMs."
-    documentation = "https://python.langchain.com/v0.2/docs/integrations/chat/perplexity/"
+    description = "Generate text using models on the Perplexity Agent API."
+    documentation = "https://docs.perplexity.ai/docs/agent-api/models"
     icon = "Perplexity"
     name = "PerplexityModel"
 
@@ -20,15 +49,14 @@ class PerplexityComponent(LCModelComponent):
             display_name="Model Name",
             advanced=False,
             options=[
-                "llama-3.1-sonar-small-128k-online",
-                "llama-3.1-sonar-large-128k-online",
-                "llama-3.1-sonar-huge-128k-online",
-                "llama-3.1-sonar-small-128k-chat",
-                "llama-3.1-sonar-large-128k-chat",
-                "llama-3.1-8b-instruct",
-                "llama-3.1-70b-instruct",
+                DEFAULT_MODEL,
+                "openai/gpt-5.5",
+                "anthropic/claude-sonnet-5-5",
+                "google/gemini-4-argon",
             ],
-            value="llama-3.1-sonar-small-128k-online",
+            value=DEFAULT_MODEL,
+            combobox=True,
+            info="Any model ID from the Perplexity Agent API model list.",
         ),
         IntInput(name="max_tokens", display_name="Max Output Tokens", info="The maximum number of tokens to generate."),
         SecretStrInput(
@@ -38,37 +66,56 @@ class PerplexityComponent(LCModelComponent):
             advanced=False,
             required=True,
         ),
+        BoolInput(
+            name="web_search",
+            display_name="Web Search",
+            value=True,
+            advanced=True,
+            info=(
+                "Make Perplexity's web_search tool available to the model. The model decides when to search. "
+                "Perplexity bills each search separately from tokens: "
+                "https://docs.perplexity.ai/docs/getting-started/pricing. "
+                "Tools bound by an Agent replace this tool."
+            ),
+        ),
+        # temperature, top_p and n are kept, hidden, so that flows saved with them update
+        # without a breaking change. None of them is sent: langchain-perplexity drops
+        # temperature and top_p on the Agent API route, and the Agent API rejects n.
         SliderInput(
-            name="temperature", display_name="Temperature", value=0.75, range_spec=RangeSpec(min=0, max=2, step=0.05)
+            name="temperature",
+            display_name="Temperature",
+            value=0.75,
+            range_spec=RangeSpec(min=0, max=2, step=0.05),
+            info="Deprecated. Not sent to the Agent API.",
+            show=False,
         ),
         FloatInput(
             name="top_p",
             display_name="Top P",
-            info="The maximum cumulative probability of tokens to consider when sampling.",
+            info="Deprecated. Not sent to the Agent API.",
             advanced=True,
+            show=False,
         ),
         IntInput(
             name="n",
             display_name="N",
-            info="Number of chat completions to generate for each prompt. "
-            "Note that the API may not return the full n completions if duplicates are generated.",
+            info="Deprecated. Not sent to the Agent API.",
             advanced=True,
+            show=False,
         ),
     ]
 
     def build_model(self) -> LanguageModel:  # type: ignore[type-var]
-        api_key = SecretStr(self.api_key).get_secret_value()
-        temperature = self.temperature
-        model = self.model_name
-        max_tokens = self.max_tokens
-        top_p = self.top_p
-        n = self.n
-
+        model = REPLACED_MODELS.get(self.model_name, self.model_name)
+        if model != self.model_name:
+            self.log(f"Model {self.model_name} is not available on the Perplexity Agent API. This run uses {model}.")
+        model_kwargs: dict[str, Any] = {"extra_headers": ATTRIBUTION_HEADERS}
+        if self.web_search:
+            model_kwargs["tools"] = [WEB_SEARCH_TOOL]
         return ChatPerplexity(
             model=model,
-            temperature=temperature or 0.75,
-            pplx_api_key=api_key,
-            top_p=top_p or None,
-            n=n or 1,
-            max_tokens=max_tokens,
+            pplx_api_key=SecretStr(self.api_key).get_secret_value(),
+            max_tokens=self.max_tokens or None,
+            use_responses_api=True,
+            model_kwargs=model_kwargs,
         )

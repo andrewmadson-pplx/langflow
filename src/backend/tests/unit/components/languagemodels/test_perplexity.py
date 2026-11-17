@@ -1,6 +1,8 @@
+import json
 import sys
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 pytest.importorskip("lfx_bundles")
@@ -8,7 +10,7 @@ pytest.importorskip("lfx_bundles")
 from lfx.components.perplexity.perplexity import PerplexityComponent
 from lfx.custom.custom_component.component import Component
 from lfx.custom.utils import build_custom_component_template
-from lfx.inputs.inputs import DropdownInput, FloatInput, IntInput, SecretStrInput, SliderInput
+from lfx.inputs.inputs import BoolInput, DropdownInput, IntInput, SecretStrInput
 
 from tests.base import ComponentTestBaseWithoutClient
 
@@ -20,6 +22,41 @@ from tests.base import ComponentTestBaseWithoutClient
 # when an earlier test in the suite causes the class to resolve to a different identity.
 _PERPLEXITY_MODULE = sys.modules[PerplexityComponent.__module__]
 
+_AGENT_API_RESPONSE = {
+    "id": "resp_1",
+    "object": "response",
+    "created_at": 0,
+    "model": "perplexity/sonar",
+    "status": "completed",
+    "output": [
+        {
+            "id": "msg_1",
+            "type": "message",
+            "role": "assistant",
+            "status": "completed",
+            "content": [{"type": "output_text", "text": "ok", "annotations": []}],
+        }
+    ],
+    "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+}
+
+
+def _capture_requests(model) -> list[httpx.Request]:
+    """Point the real ChatPerplexity at a mock transport and return the list its requests land in."""
+    from perplexity import Perplexity
+
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=_AGENT_API_RESPONSE)
+
+    model.client = Perplexity(
+        api_key="dummy-key",  # pragma: allowlist secret
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    return requests
+
 
 class TestPerplexityComponent(ComponentTestBaseWithoutClient):
     @pytest.fixture
@@ -30,8 +67,7 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
     def default_kwargs(self):
         return {
             "api_key": "dummy-key",  # pragma: allowlist secret
-            "model_name": "llama-3.1-sonar-small-128k-online",
-            "temperature": 0.75,
+            "model_name": "perplexity/sonar",
             "max_tokens": 50,
         }
 
@@ -49,7 +85,7 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
     def test_initialization(self, component_class):
         component = component_class()
         assert component.display_name == "Perplexity"
-        assert component.description == "Generate text using Perplexity LLMs."
+        assert component.description == "Generate text using models on the Perplexity Agent API."
         assert component.icon == "Perplexity"
         # The class name / identifier must remain stable: it keys saved flows.
         assert component.name == "PerplexityModel"
@@ -58,13 +94,25 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         inputs = {inp.name: inp for inp in PerplexityComponent().inputs}
         assert isinstance(inputs["model_name"], DropdownInput)
         assert isinstance(inputs["api_key"], SecretStrInput)
-        assert isinstance(inputs["temperature"], SliderInput)
         assert isinstance(inputs["max_tokens"], IntInput)
-        assert isinstance(inputs["top_p"], FloatInput)
-        assert isinstance(inputs["n"], IntInput)
         assert inputs["api_key"].required is True
-        assert inputs["model_name"].value == "llama-3.1-sonar-small-128k-online"
-        assert "llama-3.1-sonar-small-128k-online" in inputs["model_name"].options
+        assert inputs["model_name"].value == "perplexity/sonar"
+        assert inputs["model_name"].combobox is True
+        assert inputs["model_name"].options == [
+            "perplexity/sonar",
+            "openai/gpt-5.5",
+            "anthropic/claude-sonnet-5-5",
+            "google/gemini-4-argon",
+        ]
+        # No default: max_output_tokens is optional for every Agent API model.
+        assert inputs["max_tokens"].value == 0
+        # temperature, top_p and n stay declared, hidden, so that a flow saved with them
+        # updates without a breaking change.
+        for name in ("temperature", "top_p", "n"):
+            assert inputs[name].show is False
+        assert isinstance(inputs["web_search"], BoolInput)
+        assert inputs["web_search"].value is True
+        assert inputs["web_search"].advanced is True
 
     def test_template(self, default_kwargs):
         component = PerplexityComponent(**default_kwargs)
@@ -72,7 +120,7 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         assert isinstance(frontend_node, dict)
         assert "template" in frontend_node
         input_names = [inp["name"] for inp in frontend_node["template"].values() if isinstance(inp, dict)]
-        for expected in ["model_name", "api_key", "temperature", "max_tokens", "top_p", "n"]:
+        for expected in ["model_name", "api_key", "max_tokens"]:
             assert expected in input_names
 
     def test_build_model(self, component_class, default_kwargs, mocker):
@@ -82,34 +130,166 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         # inputs mapped onto its kwargs.
         mock_chat = mocker.patch.object(_PERPLEXITY_MODULE, "ChatPerplexity", return_value=MagicMock())
         component = component_class(**default_kwargs)
-        component.top_p = 0.9
-        component.n = 2
 
         model = component.build_model()
 
         mock_chat.assert_called_once_with(
-            model="llama-3.1-sonar-small-128k-online",
-            temperature=0.75,
+            model="perplexity/sonar",
             pplx_api_key="dummy-key",
-            top_p=0.9,
-            n=2,
             max_tokens=50,
+            use_responses_api=True,
+            model_kwargs={
+                "extra_headers": {
+                    "X-Pplx-Integration": "langflow",
+                    "User-Agent": "langflow-perplexity-bundle",
+                },
+                "tools": [{"type": "web_search"}],
+            },
         )
         assert model is mock_chat.return_value
+        # No model was replaced, so nothing is logged.
+        assert component.get_logs() == []
 
-    def test_build_model_applies_defaults(self, component_class, mocker):
-        # top_p falls back to None and n falls back to 1 when left unset; a falsy
-        # temperature falls back to 0.75.
+    def test_build_model_web_search_off(self, component_class, default_kwargs, mocker):
         mock_chat = mocker.patch.object(_PERPLEXITY_MODULE, "ChatPerplexity", return_value=MagicMock())
-        component = component_class(api_key="dummy-key", model_name="llama-3.1-8b-instruct", max_tokens=10)
-        component.temperature = 0
-        component.top_p = None
-        component.n = None
+        component = component_class(**default_kwargs, web_search=False)
 
         component.build_model()
 
         _, kwargs = mock_chat.call_args
-        assert kwargs["top_p"] is None
-        assert kwargs["n"] == 1
-        assert kwargs["temperature"] == 0.75
-        assert kwargs["pplx_api_key"] == "dummy-key"
+        assert kwargs["model_kwargs"] == {
+            "extra_headers": {
+                "X-Pplx-Integration": "langflow",
+                "User-Agent": "langflow-perplexity-bundle",
+            },
+        }
+
+    def test_build_model_unset_max_tokens(self, component_class, mocker):
+        mock_chat = mocker.patch.object(_PERPLEXITY_MODULE, "ChatPerplexity", return_value=MagicMock())
+        component = component_class(api_key="dummy-key", model_name="openai/gpt-5.5", max_tokens=0)
+
+        component.build_model()
+
+        _, kwargs = mock_chat.call_args
+        assert kwargs["max_tokens"] is None
+        assert kwargs["model"] == "openai/gpt-5.5"
+
+    @pytest.mark.parametrize(
+        "retired_model",
+        [
+            "llama-3.1-sonar-small-128k-online",
+            "llama-3.1-sonar-large-128k-online",
+            "llama-3.1-sonar-huge-128k-online",
+            "llama-3.1-sonar-small-128k-chat",
+            "llama-3.1-sonar-large-128k-chat",
+            "llama-3.1-8b-instruct",
+            "llama-3.1-70b-instruct",
+        ],
+    )
+    def test_build_model_replaces_retired_model(self, component_class, mocker, retired_model):
+        # A flow saved before the move to the Agent API holds one of these IDs, plus the
+        # three inputs the component no longer sends.
+        mock_chat = mocker.patch.object(_PERPLEXITY_MODULE, "ChatPerplexity", return_value=MagicMock())
+        component = component_class(
+            api_key="dummy-key",  # pragma: allowlist secret
+            model_name=retired_model,
+            max_tokens=0,
+            temperature=0.75,
+            top_p=0.9,
+            n=2,
+        )
+
+        component.build_model()
+
+        _, kwargs = mock_chat.call_args
+        assert kwargs["model"] == "perplexity/sonar"
+        assert not {"temperature", "top_p", "n"} & set(kwargs)
+        assert [log.message for log in component.get_logs()] == [
+            f"Model {retired_model} is not available on the Perplexity Agent API. This run uses perplexity/sonar."
+        ]
+
+    def test_build_model_replaces_sonar_chat_completions_id(self, component_class, mocker):
+        # "sonar" runs on Chat Completions and is not an Agent API model ID. A flow that set it
+        # through a tweak or an edited flow file keeps running, on perplexity/sonar.
+        mock_chat = mocker.patch.object(_PERPLEXITY_MODULE, "ChatPerplexity", return_value=MagicMock())
+        component = component_class(api_key="dummy-key", model_name="sonar")  # pragma: allowlist secret
+
+        component.build_model()
+
+        _, kwargs = mock_chat.call_args
+        assert kwargs["model"] == "perplexity/sonar"
+        assert [log.message for log in component.get_logs()] == [
+            "Model sonar is not available on the Perplexity Agent API. This run uses perplexity/sonar."
+        ]
+
+    def test_request_reaches_agent_api(self, component_class, default_kwargs):
+        # Build the real ChatPerplexity and capture the HTTP request it sends.
+        model = component_class(**default_kwargs).build_model()
+        requests = _capture_requests(model)
+
+        result = model.invoke("hello")
+
+        assert result.text == "ok"
+        assert len(requests) == 1
+        request = requests[0]
+        assert request.url.path == "/v1/responses"
+        assert request.headers["X-Pplx-Integration"] == "langflow"
+        assert request.headers["User-Agent"] == "langflow-perplexity-bundle"
+        body = json.loads(request.content)
+        assert body["model"] == "perplexity/sonar"
+        assert body["max_output_tokens"] == 50
+        assert body["tools"] == [{"type": "web_search"}]
+        assert not {"temperature", "top_p", "n", "max_tokens"} & set(body)
+
+    def test_request_web_search_off_sends_no_tools(self, component_class, default_kwargs):
+        model = component_class(**default_kwargs, web_search=False).build_model()
+        requests = _capture_requests(model)
+
+        model.invoke("hello")
+
+        assert len(requests) == 1
+        request = requests[0]
+        assert request.url.path == "/v1/responses"
+        assert request.headers["X-Pplx-Integration"] == "langflow"
+        assert request.headers["User-Agent"] == "langflow-perplexity-bundle"
+        assert "tools" not in json.loads(request.content)
+
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            # In GET /v1/models, not in the dropdown.
+            "openai/gpt-5.6-sol",
+            # Not an Agent API model ID and not in the replacement map: no prefix is added.
+            "sonar-pro",
+            # Unknown to the API, which answers it with a 400.
+            "not-a-model/does-not-exist",
+        ],
+    )
+    def test_request_sends_other_model_ids_unchanged(self, component_class, model_name):
+        component = component_class(api_key="dummy-key", model_name=model_name)  # pragma: allowlist secret
+        model = component.build_model()
+        requests = _capture_requests(model)
+
+        model.invoke("hello")
+
+        assert len(requests) == 1
+        assert json.loads(requests[0].content)["model"] == model_name
+        assert component.get_logs() == []
+
+    def test_request_bound_tools_replace_web_search(self, component_class, default_kwargs):
+        # An Agent calls bind_tools on the Language Model output.
+        from langchain_core.tools import tool
+
+        @tool
+        def get_weather(city: str) -> str:
+            """Return the weather for a city."""
+            return f"sunny in {city}"
+
+        model = component_class(**default_kwargs).build_model()
+        requests = _capture_requests(model)
+
+        model.bind_tools([get_weather]).invoke("hello")
+
+        assert len(requests) == 1
+        tools = json.loads(requests[0].content)["tools"]
+        assert [(t["type"], t["name"]) for t in tools] == [("function", "get_weather")]
