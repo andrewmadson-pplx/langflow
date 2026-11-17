@@ -106,11 +106,14 @@ class PerplexityComponent(LCModelComponent):
     ]
 
     def build_model(self) -> LanguageModel:  # type: ignore[type-var]
+        model = REPLACED_MODELS.get(self.model_name, self.model_name)
+        if model != self.model_name:
+            self.log(f"Model {self.model_name} is not available on the Perplexity Agent API. This run uses {model}.")
         model_kwargs: dict[str, Any] = {"extra_headers": ATTRIBUTION_HEADERS}
         if self.web_search:
             model_kwargs["tools"] = [WEB_SEARCH_TOOL]
         return ChatPerplexity(
-            model=REPLACED_MODELS.get(self.model_name, self.model_name),
+            model=model,
             pplx_api_key=SecretStr(self.api_key).get_secret_value(),
             max_tokens=self.max_tokens or None,
             use_responses_api=True,

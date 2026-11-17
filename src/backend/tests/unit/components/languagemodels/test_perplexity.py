@@ -147,6 +147,8 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
             },
         )
         assert model is mock_chat.return_value
+        # No model was replaced, so nothing is logged.
+        assert component.get_logs() == []
 
     def test_build_model_web_search_off(self, component_class, default_kwargs, mocker):
         mock_chat = mocker.patch.object(_PERPLEXITY_MODULE, "ChatPerplexity", return_value=MagicMock())
@@ -202,6 +204,9 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         _, kwargs = mock_chat.call_args
         assert kwargs["model"] == "perplexity/sonar"
         assert not {"temperature", "top_p", "n"} & set(kwargs)
+        assert [log.message for log in component.get_logs()] == [
+            f"Model {retired_model} is not available on the Perplexity Agent API. This run uses perplexity/sonar."
+        ]
 
     def test_build_model_replaces_sonar_chat_completions_id(self, component_class, mocker):
         # "sonar" runs on Chat Completions and is not an Agent API model ID. A flow that set it
@@ -213,6 +218,9 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
 
         _, kwargs = mock_chat.call_args
         assert kwargs["model"] == "perplexity/sonar"
+        assert [log.message for log in component.get_logs()] == [
+            "Model sonar is not available on the Perplexity Agent API. This run uses perplexity/sonar."
+        ]
 
     def test_request_reaches_agent_api(self, component_class, default_kwargs):
         # Build the real ChatPerplexity and capture the HTTP request it sends.
