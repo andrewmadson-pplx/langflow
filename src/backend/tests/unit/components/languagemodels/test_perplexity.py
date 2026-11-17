@@ -253,3 +253,43 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         assert request.headers["X-Pplx-Integration"] == "langflow"
         assert request.headers["User-Agent"] == "langflow-perplexity-bundle"
         assert "tools" not in json.loads(request.content)
+
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            # In GET /v1/models, not in the dropdown.
+            "openai/gpt-5.6-sol",
+            # Not an Agent API model ID and not in the replacement map: no prefix is added.
+            "sonar-pro",
+            # Unknown to the API, which answers it with a 400.
+            "not-a-model/does-not-exist",
+        ],
+    )
+    def test_request_sends_other_model_ids_unchanged(self, component_class, model_name):
+        component = component_class(api_key="dummy-key", model_name=model_name)  # pragma: allowlist secret
+        model = component.build_model()
+        requests = _capture_requests(model)
+
+        model.invoke("hello")
+
+        assert len(requests) == 1
+        assert json.loads(requests[0].content)["model"] == model_name
+        assert component.get_logs() == []
+
+    def test_request_bound_tools_replace_web_search(self, component_class, default_kwargs):
+        # An Agent calls bind_tools on the Language Model output.
+        from langchain_core.tools import tool
+
+        @tool
+        def get_weather(city: str) -> str:
+            """Return the weather for a city."""
+            return f"sunny in {city}"
+
+        model = component_class(**default_kwargs).build_model()
+        requests = _capture_requests(model)
+
+        model.bind_tools([get_weather]).invoke("hello")
+
+        assert len(requests) == 1
+        tools = json.loads(requests[0].content)["tools"]
+        assert [(t["type"], t["name"]) for t in tools] == [("function", "get_weather")]
