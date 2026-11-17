@@ -1,4 +1,5 @@
 import base64
+import math
 from types import SimpleNamespace
 
 import pytest
@@ -62,15 +63,21 @@ def _fake_create(batch_sizes):
     return create
 
 
+def _unit_vector(number):
+    high, low = divmod(number, 100)
+    length = math.hypot(high, low)
+    return pytest.approx([high / length, low / length])
+
+
 def test_embed_documents_batches_requests_and_keeps_order():
     embeddings = PerplexityEmbeddingsComponent(api_key="test-key").build_embeddings()  # pragma: allowlist secret
     batch_sizes = []
     embeddings.client = SimpleNamespace(embeddings=SimpleNamespace(create=_fake_create(batch_sizes)))
 
-    vectors = embeddings.embed_documents([str(number) for number in range(250)])
+    vectors = embeddings.embed_documents([str(number) for number in range(1, 251)])
 
     assert batch_sizes == [100, 100, 50]
-    assert vectors == [[float(number // 100), float(number % 100)] for number in range(250)]
+    assert vectors == [_unit_vector(number) for number in range(1, 251)]
 
 
 async def test_aembed_documents_batches_requests_and_keeps_order():
@@ -83,7 +90,23 @@ async def test_aembed_documents_batches_requests_and_keeps_order():
 
     embeddings.async_client = SimpleNamespace(embeddings=SimpleNamespace(create=acreate))
 
-    vectors = await embeddings.aembed_documents([str(number) for number in range(250)])
+    vectors = await embeddings.aembed_documents([str(number) for number in range(1, 251)])
 
     assert batch_sizes == [100, 100, 50]
-    assert vectors == [[float(number // 100), float(number % 100)] for number in range(250)]
+    assert vectors == [_unit_vector(number) for number in range(1, 251)]
+
+
+async def test_embeddings_are_unit_length():
+    embeddings = PerplexityEmbeddingsComponent(api_key="test-key").build_embeddings()  # pragma: allowlist secret
+    create = _fake_create([])
+
+    async def acreate(**kwargs):
+        return create(**kwargs)
+
+    embeddings.client = SimpleNamespace(embeddings=SimpleNamespace(create=create))
+    embeddings.async_client = SimpleNamespace(embeddings=SimpleNamespace(create=acreate))
+
+    assert embeddings.embed_documents(["304", "0"]) == [pytest.approx([0.6, 0.8]), [0.0, 0.0]]
+    assert embeddings.embed_query("304") == pytest.approx([0.6, 0.8])
+    assert await embeddings.aembed_documents(["304", "0"]) == [pytest.approx([0.6, 0.8]), [0.0, 0.0]]
+    assert await embeddings.aembed_query("304") == pytest.approx([0.6, 0.8])

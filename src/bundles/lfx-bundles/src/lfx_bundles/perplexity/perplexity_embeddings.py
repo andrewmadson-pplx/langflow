@@ -1,3 +1,5 @@
+import math
+
 from langchain_perplexity import PerplexityEmbeddings
 from lfx.base.embeddings.model import LCEmbeddingsModel
 from lfx.field_typing import Embeddings
@@ -10,23 +12,34 @@ INTEGRATION_HEADERS = {
 TEXTS_PER_REQUEST = 100
 
 
-class BatchedPerplexityEmbeddings(PerplexityEmbeddings):
-    """PerplexityEmbeddings that embeds documents TEXTS_PER_REQUEST texts at a time.
+def _unit_length(vector: list[float]) -> list[float]:
+    norm = math.sqrt(sum(value * value for value in vector))
+    return [value / norm for value in vector] if norm else vector
 
-    PerplexityEmbeddings sends every text in one request, and the Embeddings API
-    rejects a request with more than 512 texts or 120,000 tokens.
+
+class NormalizedPerplexityEmbeddings(PerplexityEmbeddings):
+    """PerplexityEmbeddings that returns unit-length vectors and sends TEXTS_PER_REQUEST texts per request.
+
+    The Embeddings API returns unnormalized vectors, which rank correctly only by cosine similarity.
+    Unit-length vectors rank the same by cosine similarity, inner product and L2 distance, so they
+    also work in vector stores that use L2 distance, such as the FAISS component.
+
+    PerplexityEmbeddings sends every text in one request, and the Embeddings API rejects a request
+    with more than 512 texts or 120,000 tokens.
     """
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
         for start in range(0, len(texts), TEXTS_PER_REQUEST):
-            vectors.extend(super().embed_documents(texts[start : start + TEXTS_PER_REQUEST]))
+            batch = super().embed_documents(texts[start : start + TEXTS_PER_REQUEST])
+            vectors.extend(_unit_length(vector) for vector in batch)
         return vectors
 
     async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
         for start in range(0, len(texts), TEXTS_PER_REQUEST):
-            vectors.extend(await super().aembed_documents(texts[start : start + TEXTS_PER_REQUEST]))
+            batch = await super().aembed_documents(texts[start : start + TEXTS_PER_REQUEST])
+            vectors.extend(_unit_length(vector) for vector in batch)
         return vectors
 
 
@@ -56,7 +69,7 @@ class PerplexityEmbeddingsComponent(LCEmbeddingsModel):
             msg = "Perplexity API Key is required"
             raise ValueError(msg)
 
-        embeddings = BatchedPerplexityEmbeddings(
+        embeddings = NormalizedPerplexityEmbeddings(
             api_key=api_key,
             model=self.model,
             max_retries=self.max_retries,
