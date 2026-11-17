@@ -1,11 +1,11 @@
 from langchain_perplexity import PerplexityEmbeddings
-from lfx.base.models.model import LCModelComponent
+from lfx.base.embeddings.model import LCEmbeddingsModel
 from lfx.field_typing import Embeddings
-from lfx.io import DropdownInput, IntInput, Output, SecretStrInput
+from lfx.io import DropdownInput, IntInput, SecretStrInput
 from pydantic.v1 import SecretStr
 
 
-class PerplexityEmbeddingsComponent(LCModelComponent):
+class PerplexityEmbeddingsComponent(LCEmbeddingsModel):
     display_name = "Perplexity Embeddings"
     description = "Generate embeddings using Perplexity embedding models."
     documentation = "https://docs.perplexity.ai/docs/embeddings/quickstart"
@@ -23,10 +23,6 @@ class PerplexityEmbeddingsComponent(LCModelComponent):
         SecretStrInput(name="api_key", display_name="Perplexity API Key", required=True),
         IntInput(name="max_retries", display_name="Max Retries", advanced=True, value=6),
         IntInput(name="timeout", display_name="Request Timeout", advanced=True, value=120),
-    ]
-
-    outputs = [
-        Output(display_name="Embeddings", name="embeddings", method="build_embeddings"),
     ]
 
     def build_embeddings(self) -> Embeddings:
