@@ -9,19 +9,20 @@ from pydantic.v1 import SecretStr
 
 DEFAULT_MODEL = "perplexity/sonar"
 
-# The model IDs this component offered before it moved to the Agent API. The API rejects
-# all seven, so a flow saved with one of them runs on DEFAULT_MODEL.
-RETIRED_MODELS = frozenset(
-    {
-        "llama-3.1-sonar-small-128k-online",
-        "llama-3.1-sonar-large-128k-online",
-        "llama-3.1-sonar-huge-128k-online",
-        "llama-3.1-sonar-small-128k-chat",
-        "llama-3.1-sonar-large-128k-chat",
-        "llama-3.1-8b-instruct",
-        "llama-3.1-70b-instruct",
-    }
-)
+# Model IDs a saved flow can hold that the Agent API rejects, and the model each one runs on.
+# The seven llama-3.1 IDs are the options this component offered before it moved to the
+# Agent API. "sonar" is the Sonar Chat Completions name of perplexity/sonar. Any other ID
+# is sent unchanged.
+REPLACED_MODELS = {
+    "llama-3.1-sonar-small-128k-online": DEFAULT_MODEL,
+    "llama-3.1-sonar-large-128k-online": DEFAULT_MODEL,
+    "llama-3.1-sonar-huge-128k-online": DEFAULT_MODEL,
+    "llama-3.1-sonar-small-128k-chat": DEFAULT_MODEL,
+    "llama-3.1-sonar-large-128k-chat": DEFAULT_MODEL,
+    "llama-3.1-8b-instruct": DEFAULT_MODEL,
+    "llama-3.1-70b-instruct": DEFAULT_MODEL,
+    "sonar": DEFAULT_MODEL,
+}
 
 # Sent on every request so Perplexity can see which traffic comes from Langflow.
 ATTRIBUTION_HEADERS = {
@@ -109,7 +110,7 @@ class PerplexityComponent(LCModelComponent):
         if self.web_search:
             model_kwargs["tools"] = [WEB_SEARCH_TOOL]
         return ChatPerplexity(
-            model=DEFAULT_MODEL if self.model_name in RETIRED_MODELS else self.model_name,
+            model=REPLACED_MODELS.get(self.model_name, self.model_name),
             pplx_api_key=SecretStr(self.api_key).get_secret_value(),
             max_tokens=self.max_tokens or None,
             use_responses_api=True,

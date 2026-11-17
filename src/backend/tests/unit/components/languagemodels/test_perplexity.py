@@ -203,6 +203,17 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         assert kwargs["model"] == "perplexity/sonar"
         assert not {"temperature", "top_p", "n"} & set(kwargs)
 
+    def test_build_model_replaces_sonar_chat_completions_id(self, component_class, mocker):
+        # "sonar" runs on Chat Completions and is not an Agent API model ID. A flow that set it
+        # through a tweak or an edited flow file keeps running, on perplexity/sonar.
+        mock_chat = mocker.patch.object(_PERPLEXITY_MODULE, "ChatPerplexity", return_value=MagicMock())
+        component = component_class(api_key="dummy-key", model_name="sonar")  # pragma: allowlist secret
+
+        component.build_model()
+
+        _, kwargs = mock_chat.call_args
+        assert kwargs["model"] == "perplexity/sonar"
+
     def test_request_reaches_agent_api(self, component_class, default_kwargs):
         # Build the real ChatPerplexity and capture the HTTP request it sends.
         model = component_class(**default_kwargs).build_model()
