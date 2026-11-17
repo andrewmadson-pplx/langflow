@@ -104,7 +104,8 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
                 "extra_headers": {
                     "X-Pplx-Integration": "langflow",
                     "User-Agent": "langflow-perplexity-bundle",
-                }
+                },
+                "tools": [{"type": "web_search"}],
             },
         )
         assert model is mock_chat.return_value
@@ -196,4 +197,5 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         body = json.loads(request.content)
         assert body["model"] == "perplexity/sonar"
         assert body["max_output_tokens"] == 50
+        assert body["tools"] == [{"type": "web_search"}]
         assert not {"temperature", "top_p", "n", "max_tokens"} & set(body)

@@ -27,6 +27,10 @@ ATTRIBUTION_HEADERS = {
     "User-Agent": "langflow-perplexity-bundle",
 }
 
+# An Agent API request that names a model searches the web only when it carries this tool.
+# The retired "-online" models searched without it.
+WEB_SEARCH_TOOL = {"type": "web_search"}
+
 
 class PerplexityComponent(LCModelComponent):
     display_name = "Perplexity"
@@ -92,5 +96,5 @@ class PerplexityComponent(LCModelComponent):
             pplx_api_key=SecretStr(self.api_key).get_secret_value(),
             max_tokens=self.max_tokens or None,
             use_responses_api=True,
-            model_kwargs={"extra_headers": ATTRIBUTION_HEADERS},
+            model_kwargs={"extra_headers": ATTRIBUTION_HEADERS, "tools": [WEB_SEARCH_TOOL]},
         )
