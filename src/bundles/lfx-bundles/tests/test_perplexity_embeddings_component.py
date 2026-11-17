@@ -106,7 +106,8 @@ async def test_embeddings_are_unit_length():
     embeddings.client = SimpleNamespace(embeddings=SimpleNamespace(create=create))
     embeddings.async_client = SimpleNamespace(embeddings=SimpleNamespace(create=acreate))
 
-    assert embeddings.embed_documents(["304", "0"]) == [pytest.approx([0.6, 0.8]), [0.0, 0.0]]
-    assert embeddings.embed_query("304") == pytest.approx([0.6, 0.8])
-    assert await embeddings.aembed_documents(["304", "0"]) == [pytest.approx([0.6, 0.8]), [0.0, 0.0]]
-    assert await embeddings.aembed_query("304") == pytest.approx([0.6, 0.8])
+    # "25304" encodes bytes 253 and 4, which decode as the int8 values -3 and 4.
+    assert embeddings.embed_documents(["25304", "0"]) == [pytest.approx([-0.6, 0.8]), [0.0, 0.0]]
+    assert embeddings.embed_query("25304") == pytest.approx([-0.6, 0.8])
+    assert await embeddings.aembed_documents(["25304", "0"]) == [pytest.approx([-0.6, 0.8]), [0.0, 0.0]]
+    assert await embeddings.aembed_query("25304") == pytest.approx([-0.6, 0.8])
