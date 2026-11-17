@@ -69,6 +69,10 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         ]
         # No default: max_output_tokens is optional for every Agent API model.
         assert inputs["max_tokens"].value == 0
+        # temperature, top_p and n stay declared, hidden, so that a flow saved with them
+        # updates without a breaking change.
+        for name in ("temperature", "top_p", "n"):
+            assert inputs[name].show is False
 
     def test_template(self, default_kwargs):
         component = PerplexityComponent(**default_kwargs)
@@ -106,3 +110,34 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         _, kwargs = mock_chat.call_args
         assert kwargs["max_tokens"] is None
         assert kwargs["model"] == "openai/gpt-5.5"
+
+    @pytest.mark.parametrize(
+        "retired_model",
+        [
+            "llama-3.1-sonar-small-128k-online",
+            "llama-3.1-sonar-large-128k-online",
+            "llama-3.1-sonar-huge-128k-online",
+            "llama-3.1-sonar-small-128k-chat",
+            "llama-3.1-sonar-large-128k-chat",
+            "llama-3.1-8b-instruct",
+            "llama-3.1-70b-instruct",
+        ],
+    )
+    def test_build_model_replaces_retired_model(self, component_class, mocker, retired_model):
+        # A flow saved before the move to the Agent API holds one of these IDs, plus the
+        # three inputs the component no longer sends.
+        mock_chat = mocker.patch.object(_PERPLEXITY_MODULE, "ChatPerplexity", return_value=MagicMock())
+        component = component_class(
+            api_key="dummy-key",  # pragma: allowlist secret
+            model_name=retired_model,
+            max_tokens=0,
+            temperature=0.75,
+            top_p=0.9,
+            n=2,
+        )
+
+        component.build_model()
+
+        _, kwargs = mock_chat.call_args
+        assert kwargs["model"] == "perplexity/sonar"
+        assert not {"temperature", "top_p", "n"} & set(kwargs)

@@ -34,3 +34,8 @@ For more information, see [Language model components](/components-models).
 | model_name | String | Input parameter. The Agent API model to use. Choose from the list or enter any model ID from the Agent API model list. Default: `perplexity/sonar`. |
 | max_tokens | Integer | Input parameter. The maximum number of tokens to generate. |
 | api_key | SecretString | Input parameter. The Perplexity API Key for authentication. |
+| temperature | Float | Deprecated. Hidden and not sent to the Agent API. |
+| top_p | Float | Deprecated. Hidden and not sent to the Agent API. |
+| n | Integer | Deprecated. Hidden and not sent to the Agent API. |
+
+A flow saved with one of the retired `llama-3.1-*` model IDs runs on `perplexity/sonar` after you update the component.
