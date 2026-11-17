@@ -17,7 +17,7 @@ For more information about Perplexity features and functionality used by Perplex
 
 ## Perplexity text generation
 
-This component generates text using models on the [Perplexity Agent API](https://docs.perplexity.ai/docs/agent-api/models), such as `perplexity/sonar`, `openai/gpt-5.5`, and `anthropic/claude-sonnet-4-6`.
+This component generates text using models on the [Perplexity Agent API](https://docs.perplexity.ai/docs/agent-api/models), such as `perplexity/sonar`, `openai/gpt-5.5`, and `anthropic/claude-sonnet-5-5`.
 
 It can output either a **Model Response** ([`Message`](/data-types#message)) or a **Language Model** ([`LanguageModel`](/data-types#languagemodel)).
 
@@ -32,5 +32,5 @@ For more information, see [Language model components](/components-models).
 | Name | Type | Description |
 |------|------|-------------|
 | model_name | String | Input parameter. The Agent API model to use. Choose from the list or enter any model ID from the Agent API model list. Default: `perplexity/sonar`. |
-| max_tokens | Integer | Input parameter. The maximum number of tokens to generate. Anthropic models require it. Default: `4096`. |
+| max_tokens | Integer | Input parameter. The maximum number of tokens to generate. |
 | api_key | SecretString | Input parameter. The Perplexity API Key for authentication. |

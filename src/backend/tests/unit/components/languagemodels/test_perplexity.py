@@ -61,6 +61,14 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         assert inputs["api_key"].required is True
         assert inputs["model_name"].value == "perplexity/sonar"
         assert inputs["model_name"].combobox is True
+        assert inputs["model_name"].options == [
+            "perplexity/sonar",
+            "openai/gpt-5.5",
+            "anthropic/claude-sonnet-5-5",
+            "google/gemini-4-argon",
+        ]
+        # No default: max_output_tokens is optional for every Agent API model.
+        assert inputs["max_tokens"].value == 0
 
     def test_template(self, default_kwargs):
         component = PerplexityComponent(**default_kwargs)

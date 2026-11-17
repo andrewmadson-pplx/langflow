@@ -21,19 +21,14 @@ class PerplexityComponent(LCModelComponent):
             options=[
                 "perplexity/sonar",
                 "openai/gpt-5.5",
-                "anthropic/claude-sonnet-4-6",
-                "google/gemini-3.1-pro-preview",
+                "anthropic/claude-sonnet-5-5",
+                "google/gemini-4-argon",
             ],
             value="perplexity/sonar",
             combobox=True,
             info="Any model ID from the Perplexity Agent API model list.",
         ),
-        IntInput(
-            name="max_tokens",
-            display_name="Max Output Tokens",
-            info="The maximum number of tokens to generate. Anthropic models require it.",
-            value=4096,
-        ),
+        IntInput(name="max_tokens", display_name="Max Output Tokens", info="The maximum number of tokens to generate."),
         SecretStrInput(
             name="api_key",
             display_name="Perplexity API Key",
