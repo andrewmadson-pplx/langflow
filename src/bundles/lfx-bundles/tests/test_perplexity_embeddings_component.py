@@ -32,6 +32,14 @@ def test_build_embeddings_strips_whitespace_around_api_key():
     assert embeddings.client.api_key == "test-key"  # pragma: allowlist secret
 
 
+def test_build_embeddings_sets_integration_headers_on_both_clients():
+    embeddings = PerplexityEmbeddingsComponent(api_key="test-key").build_embeddings()  # pragma: allowlist secret
+
+    for client in (embeddings.client, embeddings.async_client):
+        assert client.default_headers["X-Pplx-Integration"] == "langflow"
+        assert client.default_headers["User-Agent"] == "langflow-perplexity-bundle"
+
+
 @pytest.mark.parametrize("api_key", [None, "", "  "])
 def test_build_embeddings_requires_api_key(api_key, monkeypatch):
     monkeypatch.setenv("PPLX_API_KEY", "server-key")  # pragma: allowlist secret

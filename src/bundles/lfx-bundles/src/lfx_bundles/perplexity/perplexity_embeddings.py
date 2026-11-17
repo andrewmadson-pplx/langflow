@@ -3,6 +3,10 @@ from lfx.base.embeddings.model import LCEmbeddingsModel
 from lfx.field_typing import Embeddings
 from lfx.io import DropdownInput, IntInput, SecretStrInput
 
+INTEGRATION_HEADERS = {
+    "X-Pplx-Integration": "langflow",
+    "User-Agent": "langflow-perplexity-bundle",
+}
 TEXTS_PER_REQUEST = 100
 
 
@@ -52,9 +56,12 @@ class PerplexityEmbeddingsComponent(LCEmbeddingsModel):
             msg = "Perplexity API Key is required"
             raise ValueError(msg)
 
-        return BatchedPerplexityEmbeddings(
+        embeddings = BatchedPerplexityEmbeddings(
             api_key=api_key,
             model=self.model,
             max_retries=self.max_retries,
             timeout=self.timeout,
         )
+        embeddings.client = embeddings.client.with_options(default_headers=INTEGRATION_HEADERS)
+        embeddings.async_client = embeddings.async_client.with_options(default_headers=INTEGRATION_HEADERS)
+        return embeddings
