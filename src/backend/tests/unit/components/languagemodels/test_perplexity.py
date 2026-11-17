@@ -1,6 +1,8 @@
+import json
 import sys
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 pytest.importorskip("lfx_bundles")
@@ -98,6 +100,12 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
             pplx_api_key="dummy-key",
             max_tokens=50,
             use_responses_api=True,
+            model_kwargs={
+                "extra_headers": {
+                    "X-Pplx-Integration": "langflow",
+                    "User-Agent": "langflow-perplexity-bundle",
+                }
+            },
         )
         assert model is mock_chat.return_value
 
@@ -141,3 +149,51 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         _, kwargs = mock_chat.call_args
         assert kwargs["model"] == "perplexity/sonar"
         assert not {"temperature", "top_p", "n"} & set(kwargs)
+
+    def test_request_reaches_agent_api(self, component_class, default_kwargs):
+        # Build the real ChatPerplexity and capture the HTTP request it sends.
+        from perplexity import Perplexity
+
+        requests = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(
+                200,
+                json={
+                    "id": "resp_1",
+                    "object": "response",
+                    "created_at": 0,
+                    "model": "perplexity/sonar",
+                    "status": "completed",
+                    "output": [
+                        {
+                            "id": "msg_1",
+                            "type": "message",
+                            "role": "assistant",
+                            "status": "completed",
+                            "content": [{"type": "output_text", "text": "ok", "annotations": []}],
+                        }
+                    ],
+                    "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+                },
+            )
+
+        model = component_class(**default_kwargs).build_model()
+        model.client = Perplexity(
+            api_key="dummy-key",  # pragma: allowlist secret
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+        result = model.invoke("hello")
+
+        assert result.text == "ok"
+        assert len(requests) == 1
+        request = requests[0]
+        assert request.url.path == "/v1/responses"
+        assert request.headers["X-Pplx-Integration"] == "langflow"
+        assert request.headers["User-Agent"] == "langflow-perplexity-bundle"
+        body = json.loads(request.content)
+        assert body["model"] == "perplexity/sonar"
+        assert body["max_output_tokens"] == 50
+        assert not {"temperature", "top_p", "n", "max_tokens"} & set(body)

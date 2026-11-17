@@ -21,6 +21,12 @@ RETIRED_MODELS = frozenset(
     }
 )
 
+# Sent on every request so Perplexity can see which traffic comes from Langflow.
+ATTRIBUTION_HEADERS = {
+    "X-Pplx-Integration": "langflow",
+    "User-Agent": "langflow-perplexity-bundle",
+}
+
 
 class PerplexityComponent(LCModelComponent):
     display_name = "Perplexity"
@@ -86,4 +92,5 @@ class PerplexityComponent(LCModelComponent):
             pplx_api_key=SecretStr(self.api_key).get_secret_value(),
             max_tokens=self.max_tokens or None,
             use_responses_api=True,
+            model_kwargs={"extra_headers": ATTRIBUTION_HEADERS},
         )
