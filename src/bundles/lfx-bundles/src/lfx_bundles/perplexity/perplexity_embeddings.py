@@ -2,7 +2,6 @@ from langchain_perplexity import PerplexityEmbeddings
 from lfx.base.embeddings.model import LCEmbeddingsModel
 from lfx.field_typing import Embeddings
 from lfx.io import DropdownInput, IntInput, SecretStrInput
-from pydantic.v1 import SecretStr
 
 TEXTS_PER_REQUEST = 100
 
@@ -48,12 +47,13 @@ class PerplexityEmbeddingsComponent(LCEmbeddingsModel):
     ]
 
     def build_embeddings(self) -> Embeddings:
-        if not self.api_key:
+        api_key = (self.api_key or "").strip()
+        if not api_key:
             msg = "Perplexity API Key is required"
             raise ValueError(msg)
 
         return BatchedPerplexityEmbeddings(
-            api_key=SecretStr(self.api_key).get_secret_value(),
+            api_key=api_key,
             model=self.model,
             max_retries=self.max_retries,
             timeout=self.timeout,

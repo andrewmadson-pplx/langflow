@@ -23,7 +23,16 @@ def test_build_embeddings_passes_inputs():
     assert embeddings.request_timeout == 30
 
 
-@pytest.mark.parametrize("api_key", [None, ""])
+def test_build_embeddings_strips_whitespace_around_api_key():
+    component = PerplexityEmbeddingsComponent(api_key=" test-key\n")  # pragma: allowlist secret
+
+    embeddings = component.build_embeddings()
+
+    assert embeddings.pplx_api_key.get_secret_value() == "test-key"  # pragma: allowlist secret
+    assert embeddings.client.api_key == "test-key"  # pragma: allowlist secret
+
+
+@pytest.mark.parametrize("api_key", [None, "", "  "])
 def test_build_embeddings_requires_api_key(api_key, monkeypatch):
     monkeypatch.setenv("PPLX_API_KEY", "server-key")  # pragma: allowlist secret
     component = PerplexityEmbeddingsComponent(api_key=api_key)
