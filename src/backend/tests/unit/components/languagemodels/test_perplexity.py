@@ -10,7 +10,7 @@ pytest.importorskip("lfx_bundles")
 from lfx.components.perplexity.perplexity import PerplexityComponent
 from lfx.custom.custom_component.component import Component
 from lfx.custom.utils import build_custom_component_template
-from lfx.inputs.inputs import DropdownInput, IntInput, SecretStrInput
+from lfx.inputs.inputs import BoolInput, DropdownInput, IntInput, SecretStrInput
 
 from tests.base import ComponentTestBaseWithoutClient
 
@@ -21,6 +21,41 @@ from tests.base import ComponentTestBaseWithoutClient
 # "lfx.components.perplexity.perplexity.ChatPerplexity" misses (mock "called 0 times")
 # when an earlier test in the suite causes the class to resolve to a different identity.
 _PERPLEXITY_MODULE = sys.modules[PerplexityComponent.__module__]
+
+_AGENT_API_RESPONSE = {
+    "id": "resp_1",
+    "object": "response",
+    "created_at": 0,
+    "model": "perplexity/sonar",
+    "status": "completed",
+    "output": [
+        {
+            "id": "msg_1",
+            "type": "message",
+            "role": "assistant",
+            "status": "completed",
+            "content": [{"type": "output_text", "text": "ok", "annotations": []}],
+        }
+    ],
+    "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+}
+
+
+def _capture_requests(model) -> list[httpx.Request]:
+    """Point the real ChatPerplexity at a mock transport and return the list its requests land in."""
+    from perplexity import Perplexity
+
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=_AGENT_API_RESPONSE)
+
+    model.client = Perplexity(
+        api_key="dummy-key",  # pragma: allowlist secret
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    return requests
 
 
 class TestPerplexityComponent(ComponentTestBaseWithoutClient):
@@ -75,6 +110,9 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         # updates without a breaking change.
         for name in ("temperature", "top_p", "n"):
             assert inputs[name].show is False
+        assert isinstance(inputs["web_search"], BoolInput)
+        assert inputs["web_search"].value is True
+        assert inputs["web_search"].advanced is True
 
     def test_template(self, default_kwargs):
         component = PerplexityComponent(**default_kwargs)
@@ -109,6 +147,20 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
             },
         )
         assert model is mock_chat.return_value
+
+    def test_build_model_web_search_off(self, component_class, default_kwargs, mocker):
+        mock_chat = mocker.patch.object(_PERPLEXITY_MODULE, "ChatPerplexity", return_value=MagicMock())
+        component = component_class(**default_kwargs, web_search=False)
+
+        component.build_model()
+
+        _, kwargs = mock_chat.call_args
+        assert kwargs["model_kwargs"] == {
+            "extra_headers": {
+                "X-Pplx-Integration": "langflow",
+                "User-Agent": "langflow-perplexity-bundle",
+            },
+        }
 
     def test_build_model_unset_max_tokens(self, component_class, mocker):
         mock_chat = mocker.patch.object(_PERPLEXITY_MODULE, "ChatPerplexity", return_value=MagicMock())
@@ -153,38 +205,8 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
 
     def test_request_reaches_agent_api(self, component_class, default_kwargs):
         # Build the real ChatPerplexity and capture the HTTP request it sends.
-        from perplexity import Perplexity
-
-        requests = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            requests.append(request)
-            return httpx.Response(
-                200,
-                json={
-                    "id": "resp_1",
-                    "object": "response",
-                    "created_at": 0,
-                    "model": "perplexity/sonar",
-                    "status": "completed",
-                    "output": [
-                        {
-                            "id": "msg_1",
-                            "type": "message",
-                            "role": "assistant",
-                            "status": "completed",
-                            "content": [{"type": "output_text", "text": "ok", "annotations": []}],
-                        }
-                    ],
-                    "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
-                },
-            )
-
         model = component_class(**default_kwargs).build_model()
-        model.client = Perplexity(
-            api_key="dummy-key",  # pragma: allowlist secret
-            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
-        )
+        requests = _capture_requests(model)
 
         result = model.invoke("hello")
 
@@ -199,3 +221,16 @@ class TestPerplexityComponent(ComponentTestBaseWithoutClient):
         assert body["max_output_tokens"] == 50
         assert body["tools"] == [{"type": "web_search"}]
         assert not {"temperature", "top_p", "n", "max_tokens"} & set(body)
+
+    def test_request_web_search_off_sends_no_tools(self, component_class, default_kwargs):
+        model = component_class(**default_kwargs, web_search=False).build_model()
+        requests = _capture_requests(model)
+
+        model.invoke("hello")
+
+        assert len(requests) == 1
+        request = requests[0]
+        assert request.url.path == "/v1/responses"
+        assert request.headers["X-Pplx-Integration"] == "langflow"
+        assert request.headers["User-Agent"] == "langflow-perplexity-bundle"
+        assert "tools" not in json.loads(request.content)

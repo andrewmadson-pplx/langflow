@@ -1,8 +1,10 @@
+from typing import Any
+
 from langchain_perplexity import ChatPerplexity
 from lfx.base.models.model import LCModelComponent
 from lfx.field_typing import LanguageModel
 from lfx.field_typing.range_spec import RangeSpec
-from lfx.io import DropdownInput, FloatInput, IntInput, SecretStrInput, SliderInput
+from lfx.io import BoolInput, DropdownInput, FloatInput, IntInput, SecretStrInput, SliderInput
 from pydantic.v1 import SecretStr
 
 DEFAULT_MODEL = "perplexity/sonar"
@@ -27,7 +29,7 @@ ATTRIBUTION_HEADERS = {
     "User-Agent": "langflow-perplexity-bundle",
 }
 
-# An Agent API request that names a model searches the web only when it carries this tool.
+# An Agent API request that names a model can search the web only when it carries this tool.
 # The retired "-online" models searched without it.
 WEB_SEARCH_TOOL = {"type": "web_search"}
 
@@ -63,6 +65,18 @@ class PerplexityComponent(LCModelComponent):
             advanced=False,
             required=True,
         ),
+        BoolInput(
+            name="web_search",
+            display_name="Web Search",
+            value=True,
+            advanced=True,
+            info=(
+                "Make Perplexity's web_search tool available to the model. The model decides when to search. "
+                "Perplexity bills each search separately from tokens: "
+                "https://docs.perplexity.ai/docs/getting-started/pricing. "
+                "Tools bound by an Agent replace this tool."
+            ),
+        ),
         # temperature, top_p and n are kept, hidden, so that flows saved with them update
         # without a breaking change. None of them is sent: langchain-perplexity drops
         # temperature and top_p on the Agent API route, and the Agent API rejects n.
@@ -91,10 +105,13 @@ class PerplexityComponent(LCModelComponent):
     ]
 
     def build_model(self) -> LanguageModel:  # type: ignore[type-var]
+        model_kwargs: dict[str, Any] = {"extra_headers": ATTRIBUTION_HEADERS}
+        if self.web_search:
+            model_kwargs["tools"] = [WEB_SEARCH_TOOL]
         return ChatPerplexity(
             model=DEFAULT_MODEL if self.model_name in RETIRED_MODELS else self.model_name,
             pplx_api_key=SecretStr(self.api_key).get_secret_value(),
             max_tokens=self.max_tokens or None,
             use_responses_api=True,
-            model_kwargs={"extra_headers": ATTRIBUTION_HEADERS, "tools": [WEB_SEARCH_TOOL]},
+            model_kwargs=model_kwargs,
         )
